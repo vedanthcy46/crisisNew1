@@ -127,16 +127,23 @@ def my_incidents():
 @login_required
 @user_required
 def view_incident(incident_id):
+    current_app.logger.info(f"Fetching incident {incident_id} for user {current_user.id}")
     incident = Incident.query.filter_by(id=incident_id, reported_by=current_user.id).first_or_404()
-    
-    # Get status updates for this incident
+    current_app.logger.info("Incident fetched successfully")
+
+    current_app.logger.info("Fetching status updates")
     status_updates = incident.status_updates.order_by(db.desc('created_at')).all()
-    
-    # Get image data if available
-    from mongo_utils import get_image_base64
+    current_app.logger.info(f"Fetched {len(status_updates)} status updates")
+
     image_data = None
     if incident.image_id:
-        image_data = get_image_base64(incident.image_id)
+        try:
+            current_app.logger.info(f"Fetching image data for image_id {incident.image_id}")
+            # Commented out to prevent potential timeout during debugging
+            # image_data = get_image_base64(incident.image_id)
+            current_app.logger.info("Image data fetch skipped during debug")
+        except Exception as e:
+            current_app.logger.error(f"Error fetching image data: {str(e)}")
     
     return render_template('user/incident_details.html', 
                          incident=incident,
