@@ -4,7 +4,8 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from werkzeug.middleware.proxy_fix import ProxyFix
-
+import pymysql
+pymysql.install_as_MySQLdb()
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 
