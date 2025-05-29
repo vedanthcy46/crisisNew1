@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+{% block head %}
+
+{% endblock %}
+{% block extra_scripts %}
+<!-- Load Leaflet JS -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<!-- Auto-refresh page every 30 seconds to show status updates -->
+<script>
+    setTimeout(() => {
+        location.reload();
+    }, 30000);
+</script>
+
+{% if incident.latitude and incident.longitude %}
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const lat = parseFloat('{{ "%.6f"|format(incident.latitude) }}');
+        const lon = parseFloat('{{ "%.6f"|format(incident.longitude) }}');
+
+        const map = L.map('leafletMap').setView([lat, lon], 15);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        L.marker([lat, lon])
+            .addTo(map)
+            .bindPopup('<b>{{ incident.title|escape }}</b><br>{{ incident.address|escape }}')
+            .openPopup();
+    });
+</script>
+
+{% endif %}
+{% endblock %}
+{% block title %}Incident Details - Crisis Management System{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-info-circle me-2"></i>Incident Details #{{ incident.id }}</h2>
+                <a href="{{ url_for('admin.incidents') }}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Back to Incidents
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Incident Information -->
+        <div class="col-md-8">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-exclamation-triangle me-2"></i>Incident Information</h5>
+                </div>
+                <div class="card-body">
+                    <h4>{{ incident.title }}</h4>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong>Type:</strong>
+                            <span class="badge bg-info ms-2">{{ incident.incident_type.replace('_', ' ').title()
+                                }}</span>
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Priority:</strong>
+                            <span class="badge bg-{{ incident.get_priority_color() }} ms-2">{{ incident.priority.title()
+                                }}</span>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong>Status:</strong>
+                            <span class="badge bg-{{ incident.get_status_color() }} ms-2">{{
+                                incident.status.replace('_', ' ').title() }}</span>
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Reported by:</strong> {{ incident.reporter.full_name }}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <strong>Description:</strong>
+                        <p class="mt-2">{{ incident.description }}</p>
+                    </div>
+
+
+                    <div class="mb-3">
+                        <strong>Location:</strong>
+                        <p class="mt-2">{{ incident.address }}</p>
+                        {% if incident.latitude and incident.longitude %}
+                        <small class="text-muted d-block mb-2">
+                            GPS Coordinates: {{ "%.6f"|format(incident.latitude) }}, {{
+                            "%.6f"|format(incident.longitude) }}
+                        </small>
+                        <a href="https://www.google.com/maps?q={{ incident.latitude }},{{ incident.longitude }}"
+                            target="_blank" class="btn btn-outline-primary btn-sm mb-3">
+                            <i class="fas fa-map-marker-alt me-1"></i>View on Google Maps
+                        </a>
+
+                        <!-- Leaflet Map -->
+                        <div id="leafletMap" style="height: 300px; width: 100%; border-radius: 8px;"></div>
+                        {% endif %}
+                    </div>
+
+                    {% if image_data %}
+                    <div class="mb-3">
+                        <strong>Attached Image:</strong>
+                        <div class="mt-2">
+                            <img src="{{ image_data }}"
+                                alt="Incident Image" class="img-fluid rounded" style="max-width: 100%; height: auto;">
+                        </div>
+                    </div>
+                    {% elif incident.image_id %}
+                    <div class="mb-3">
+                        <strong>Attached Image:</strong>
+                        <div class="mt-2">
+                            <img src="{{ url_for('image.serve_image', file_id=incident.image_id) }}"
+                                alt="Incident Image" class="img-fluid rounded" style="max-width: 100%; height: auto;">
+                        </div>
+                    </div>
+                    {% elif incident.image_path %}
+                    <div class="mb-3">
+                        <strong>Attached Image:</strong>
+                        <div class="mt-2">
+                            <img src="{{ url_for('static', filename='uploads/' + incident.image_path) }}"
+                                alt="Incident Image" class="img-fluid rounded" style="max-width: 100%; height: auto;">
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if incident.rescue_image_id %}
+                    <div class="mb-3">
+                        <strong>Rescue Team Image:</strong>
+                        <div class="mt-2">
+                            <img src="{{ url_for('image.serve_image', file_id=incident.rescue_image_id) }}"
+                                alt="Rescue Image" class="img-fluid rounded" style="max-width: 100%; height: auto;">
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <strong>Date Reported:</strong> {{ incident.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                        </div>
+                        <div class="col-md-6">
+                            {% if incident.resolved_at %}
+                            <strong>Date Resolved:</strong> {{ incident.resolved_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Actions -->
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <!-- Assign Team -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fas fa-user-shield me-2"></i>Assign Rescue Team</h6>
+                        </div>
+                        <div class="card-body">
+                            {% if incident.assigned_team %}
+                            <p class="mb-2">
+                                <strong>Currently Assigned:</strong><br>
+                                {{ incident.assigned_team.full_name }}
+                            </p>
+                            {% endif %}
+                            
+                            {% if incident.status in ['closed', 'rejected', 'resolved', 'in_progress'] %}
+                                <div class="alert alert-warning">
+                                    <i class="fas fa-lock me-2"></i>
+                                    Cannot assign team. This incident is {{ incident.status }}.
+                                </div>
+                            {% else %}
+                                <form method="POST" action="{{ url_for('admin.assign_team', incident_id=incident.id) }}">
+                                    {{ assign_team_form.hidden_tag() }}
+                                    <div class="mb-3">
+                                        {{ assign_team_form.team_id(class="form-select") }}
+                                    </div>
+                                    <div class="mb-3">
+                                        {{ assign_team_form.notes(class="form-control", placeholder="Assignment notes
+                                        (optional)") }}
+                                    </div>
+                                    <button type="submit" class="btn btn-primary btn-sm">
+                                        <i class="fas fa-user-plus me-1"></i>Assign Team
+                                    </button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <!-- Assign Resource -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fas fa-tools me-2"></i>Assign Resource</h6>
+                        </div>
+                        <div class="card-body">
+                            {% if incident.status in ['closed', 'rejected', 'resolved'] %}
+                                <div class="alert alert-warning">
+                                    <i class="fas fa-lock me-2"></i>
+                                    Cannot assign resources. This incident is {{ incident.status }}.
+                                </div>
+                            {% else %}
+                                <form method="POST"
+                                    action="{{ url_for('admin.assign_resource', incident_id=incident.id) }}">
+                                    {{ assign_resource_form.hidden_tag() }}
+                                    <div class="mb-3">
+                                        <label class="form-label">Select Resource:</label>
+                                        {{ assign_resource_form.resource_ids(class="form-select") }}
+                                    </div>
+                                    <div class="mb-3">
+                                        {{ assign_resource_form.notes(class="form-control", placeholder="Assignment notes
+                                        (optional)") }}
+                                    </div>
+                                    <button type="submit" class="btn btn-success btn-sm">
+                                        <i class="fas fa-plus me-1"></i>Assign Resource
+                                    </button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Assigned Resources -->
+            {% if incident.resources %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-list me-2"></i>Assigned Resources</h6>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Resource</th>
+                                    <th>Type</th>
+                                    <th>Assigned</th>
+                                    <th>Notes</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for assignment in incident.resources %}
+                                {% if not assignment.released_at %}
+                                <tr>
+                                    <td>{{ assignment.resource.name }}</td>
+                                    <td>
+                                        <span class="badge bg-info">{{ assignment.resource.resource_type.title()
+                                            }}</span>
+                                    </td>
+                                    <td>{{ assignment.assigned_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                    <td>{{ assignment.notes or '-' }}</td>
+                                    <td>
+                                        {% if incident.status in ['closed', 'rejected'] %}
+                                            <button class="btn btn-sm btn-outline-secondary" disabled>
+                                                <i class="fas fa-lock"></i> Locked
+                                            </button>
+                                        {% else %}
+                                            <form action="{{ url_for('admin.release_resource', assignment_id=assignment.id) }}" method="POST" class="d-inline">
+                                                <button type="submit" class="btn btn-sm btn-outline-warning">
+                                                    <i class="fas fa-undo"></i> Release
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endif %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Status Update Form -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-edit me-2"></i>Update Status</h5>
+                </div>
+                <div class="card-body">
+                    {% if incident.status in ['closed', 'rejected', 'resolved', 'in_progress'] %}
+                        <div class="alert alert-warning">
+                            <i class="fas fa-lock me-2"></i>
+                            This incident is {{ incident.status }} and cannot be updated.
+                        </div>
+                    {% else %}
+                        <form method="POST" action="{{ url_for('admin.update_status', incident_id=incident.id) }}">
+                            {{ status_form.hidden_tag() }}
+
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    {{ status_form.status.label(class="form-label") }}
+                                    {{ status_form.status(class="form-select") }}
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                {{ status_form.notes.label(class="form-label") }}
+                                {{ status_form.notes(class="form-control", rows="3") }}
+                            </div>
+
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-2"></i>Update Status
+                            </button>
+                        </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-md-4">
+            <!-- Reporter Information -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-user me-2"></i>Reporter Information</h6>
+                </div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <strong>Name:</strong><br>
+                        {{ incident.reporter.full_name }}
+                    </div>
+                    {% if incident.reporter.phone %}
+                    <div class="mb-2">
+                        <strong>Phone:</strong><br>
+                        {{ incident.reporter.phone }}
+                    </div>
+                    {% endif %}
+                    <div class="mb-2">
+                        <strong>Email:</strong><br>
+                        {{ incident.reporter.email }}
+                    </div>
+                    {% if incident.reporter.address %}
+                    <div class="mb-2">
+                        <strong>Address:</strong><br>
+                        <small>{{ incident.reporter.address }}</small>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Status History -->
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-history me-2"></i>Status History</h6>
+                </div>
+                <div class="card-body">
+                    {% if status_updates %}
+                    <div class="timeline">
+                        {% for update in status_updates %}
+                        <div class="timeline-item mb-3">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <span class="badge bg-info">
+                                        {{ update.old_status|title if update.old_status else 'Initial' }} → {{
+                                        update.new_status|title }}
+                                    </span>
+                                    {% if update.notes %}
+                                    <p class="small mb-1 mt-1">{{ update.notes }}</p>
+                                    {% endif %}
+                                    <small class="text-muted">
+                                        by {{ update.updater.full_name }}<br>
+                                        {{ update.created_at.strftime('%Y-%m-%d %H:%M') }}
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-center py-3">
+                        <i class="fas fa-clipboard-list fa-2x text-muted mb-2"></i>
+                        <p class="text-muted mb-0 small">No status updates yet</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

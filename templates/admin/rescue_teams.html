@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Rescue Teams - Crisis Management System{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-user-shield me-2"></i>Rescue Teams</h2>
+                <a href="{{ url_for('admin.add_user') }}?role=rescue_team" class="btn btn-primary">
+                    <i class="fas fa-user-plus me-2"></i>Add Rescue Team
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Full Name</th>
+                            <th>Email</th>
+                            <th>Phone</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for team in rescue_teams.items %}
+                        <tr>
+                            <td>{{ team.id }}</td>
+                            <td>{{ team.username }}</td>
+                            <td>{{ team.full_name }}</td>
+                            <td>{{ team.email }}</td>
+                            <td>{{ team.phone or '-' }}</td>
+                            <td>
+                                <span class="badge bg-{{ 'success' if team.is_active else 'danger' }}">
+                                    {{ 'Active' if team.is_active else 'Inactive' }}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="btn-group">
+                                    <a href="{{ url_for('admin.edit_user', user_id=team.id) }}" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    <a href="{{ url_for('admin.toggle_user_status', user_id=team.id) }}" class="btn btn-sm btn-outline-{{ 'danger' if team.is_active else 'success' }}">
+                                        <i class="fas fa-{{ 'ban' if team.is_active else 'check' }}"></i>
+                                    </a>
+                                    <form action="{{ url_for('admin.delete_rescue_team', user_id=team.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this rescue team? This action cannot be undone.');">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <nav aria-label="Page navigation">
+                <ul class="pagination justify-content-center">
+                    {% if rescue_teams.has_prev %}
+                    <li class="page-item">
+                        <a class="page-link" href="{{ url_for('admin.rescue_teams', page=rescue_teams.prev_num) }}">Previous</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled">
+                        <span class="page-link">Previous</span>
+                    </li>
+                    {% endif %}
+
+                    {% for page_num in rescue_teams.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+                    {% if page_num %}
+                    <li class="page-item {{ 'active' if page_num == rescue_teams.page else '' }}">
+                        <a class="page-link" href="{{ url_for('admin.rescue_teams', page=page_num) }}">{{ page_num }}</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    {% endif %}
+                    {% endfor %}
+
+                    {% if rescue_teams.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="{{ url_for('admin.rescue_teams', page=rescue_teams.next_num) }}">Next</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled">
+                        <span class="page-link">Next</span>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+    </div>
+</div>
+{% endblock %}

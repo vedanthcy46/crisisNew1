@@ -1,0 +1,477 @@
+{% extends "base.html" %}
+
+{% block head %}
+
+{% endblock %}
+{% block extra_scripts %}
+<!-- Load Leaflet JS -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<!-- Auto-refresh page every 30 seconds to show status updates only for active incidents -->
+<script>
+    {% if incident.status not in ['closed', 'rejected', 'resolved'] %}
+    setTimeout(() => {
+        location.reload();
+    }, 30000);
+    {% endif %}
+</script>
+
+{% if incident.latitude and incident.longitude %}
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const lat = parseFloat('{{ "%.6f"|format(incident.latitude) }}');
+        const lon = parseFloat('{{ "%.6f"|format(incident.longitude) }}');
+
+        const map = L.map('leafletMap').setView([lat, lon], 15);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        L.marker([lat, lon])
+            .addTo(map)
+            .bindPopup('<b>{{ incident.title|escape }}</b><br>{{ incident.address|escape }}')
+            .openPopup();
+    });
+</script>
+{% endif %}
+
+<!-- ETA Timer Script -->
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // Only show active timer if status is in_progress
+        {% if incident.status == 'in_progress' and incident.latitude and incident.longitude %}
+        // RV College Kengeri coordinates (default admin location)
+        const adminLat = 12.9237;
+        const adminLng = 77.5042;
+        
+        const incidentLat = {{ incident.latitude }};
+        const incidentLng = {{ incident.longitude }};
+        
+        // Calculate distance using Haversine formula
+        function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radius of the earth in km
+            const dLat = deg2rad(lat2-lat1);
+            const dLon = deg2rad(lon2-lon1); 
+            const a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
+                Math.sin(dLon/2) * Math.sin(dLon/2); 
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+            const d = R * c; // Distance in km
+            return d;
+        }
+
+        function deg2rad(deg) {
+            return deg * (Math.PI / 180);
+        }
+
+        // Calculate distance and ETA
+        const distance = getDistanceFromLatLonInKm(adminLat, adminLng, incidentLat, incidentLng);
+
+        // Assume average speed of 40 km/h in city traffic
+        const avgSpeed = 40;
+        const etaMinutes = Math.round((distance / avgSpeed) * 60);
+
+        // Add preparation time (5-15 minutes based on priority)
+        let prepTime = 5;
+        {% if incident.priority == 'high' or incident.priority == 'critical' %}
+        prepTime = 5;
+        {% elif incident.priority == 'medium' %}
+        prepTime = 10;
+        {% else %}
+        prepTime = 15;
+        {% endif %}
+
+        const totalEtaMinutes = etaMinutes + prepTime;
+
+        // Display ETA
+        const etaDisplay = document.getElementById('eta-display');
+        const etaProgress = document.getElementById('eta-progress');
+        const etaStatus = document.getElementById('eta-status');
+
+        if (totalEtaMinutes < 60) {
+            etaDisplay.textContent = `${totalEtaMinutes} minutes`;
+        } else {
+            const hours = Math.floor(totalEtaMinutes / 60);
+            const mins = totalEtaMinutes % 60;
+            etaDisplay.textContent = `${hours} hour${hours > 1 ? 's' : ''} ${mins} minute${mins > 1 ? 's' : ''}`;
+        }
+
+        // Set priority-based color
+        {% if incident.priority == 'critical' or incident.priority == 'high' %}
+        etaDisplay.classList.add('text-danger');
+        etaProgress.classList.remove('bg-danger', 'bg-warning', 'bg-info');
+        etaProgress.classList.add('bg-danger');
+        {% elif incident.priority == 'medium' %}
+        etaDisplay.classList.add('text-warning');
+        etaProgress.classList.remove('bg-danger', 'bg-warning', 'bg-info');
+        etaProgress.classList.add('bg-warning');
+        {% else %}
+        etaDisplay.classList.add('text-info');
+        etaProgress.classList.remove('bg-danger', 'bg-warning', 'bg-info');
+        etaProgress.classList.add('bg-info');
+        {% endif %}
+
+        // Simulate progress
+        const createdTime = new Date('{{ incident.created_at.isoformat() }}').getTime();
+        const estimatedArrival = createdTime + (totalEtaMinutes * 60 * 1000);
+        const now = new Date().getTime();
+
+        // Calculate progress percentage
+        let progressPercent = 0;
+        if (now >= estimatedArrival) {
+            progressPercent = 100;
+            etaStatus.textContent = "Rescue team should have arrived";
+        } else {
+            const elapsed = now - createdTime;
+            const total = estimatedArrival - createdTime;
+            progressPercent = Math.min(Math.round((elapsed / total) * 100), 99);
+
+            if (progressPercent < 25) {
+                etaStatus.textContent = "Dispatching team...";
+            } else if (progressPercent < 50) {
+                etaStatus.textContent = "Team en route...";
+            } else if (progressPercent < 75) {
+                etaStatus.textContent = "Team approaching...";
+            } else {
+                etaStatus.textContent = "Team arriving soon...";
+            }
+        }
+
+        etaProgress.style.width = `${progressPercent}%`;
+
+        // Update progress every 30 seconds if not complete
+        if (progressPercent < 100) {
+            const updateInterval = setInterval(function () {
+                const currentTime = new Date().getTime();
+                if (currentTime >= estimatedArrival) {
+                    clearInterval(updateInterval);
+                    etaProgress.style.width = '100%';
+                    etaStatus.textContent = "Rescue team should have arrived";
+                } else {
+                    const newElapsed = currentTime - createdTime;
+                    const total = estimatedArrival - createdTime;
+                    const newProgressPercent = Math.min(Math.round((newElapsed / total) * 100), 99);
+                    etaProgress.style.width = `${newProgressPercent}%`;
+
+                    if (newProgressPercent < 25) {
+                        etaStatus.textContent = "Dispatching team...";
+                    } else if (newProgressPercent < 50) {
+                        etaStatus.textContent = "Team en route...";
+                    } else if (newProgressPercent < 75) {
+                        etaStatus.textContent = "Team approaching...";
+                    } else {
+                        etaStatus.textContent = "Team arriving soon...";
+                    }
+                }
+            }, 30000);
+        }
+        {% elif incident.status == 'pending' %}
+        // Show waiting message for pending incidents
+        const etaDisplay = document.getElementById('eta-display');
+        const etaStatus = document.getElementById('eta-status');
+        if (etaDisplay && etaStatus) {
+            etaDisplay.textContent = "Waiting for team assignment";
+            etaStatus.textContent = "Timer will start when a team is assigned";
+        }
+        {% endif %}
+    });
+</script>
+{% endblock %}
+
+{% block title %}Incident Details - Crisis Management System{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-info-circle me-2"></i>Incident Details #{{ incident.id }}</h2>
+                <div>
+                    {% if incident.status in ['pending', 'in_progress'] %}
+                    <form method="POST" action="{{ url_for('user.withdraw_incident', incident_id=incident.id) }}"
+                        class="d-inline"
+                        onsubmit="return confirm('Are you sure you want to withdraw this incident? This action cannot be undone.');">
+                        <button type="submit" class="btn btn-danger me-2">
+                            <i class="fas fa-times-circle me-1"></i>Withdraw Report
+                        </button>
+                    </form>
+                    {% endif %}
+                    <a href="{{ url_for('user.my_incidents') }}" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left me-2"></i>Back to My Reports
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Incident Information -->
+        <div class="col-md-8">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-exclamation-triangle me-2"></i>Incident Information</h5>
+                </div>
+
+                <div class="card-body">
+                    <h4>{{ incident.title }}</h4>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong>Type:</strong>
+                            <span class="badge bg-info ms-2">{{ incident.incident_type.replace('_', ' ').title()
+                                }}</span>
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Priority:</strong>
+                            <span class="badge bg-{{ incident.get_priority_color() }} ms-2">{{ incident.priority.title()
+                                }}</span>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong>Status:</strong>
+                            <span class="badge bg-{{ incident.get_status_color() }} ms-2">{{
+                                incident.status.replace('_', ' ').title() }}</span>
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Report ID:</strong> #{{ incident.id }}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <strong>Description:</strong>
+                        <p class="mt-2">{{ incident.description }}</p>
+                    </div>
+
+                    <div class="mb-3">
+                        <strong>Location:</strong>
+                        <p class="mt-2">{{ incident.address }}</p>
+                        {% if incident.latitude and incident.longitude %}
+                        <small class="text-muted d-block mb-2">
+                            GPS Coordinates: {{ "%.6f"|format(incident.latitude) }}, {{
+                            "%.6f"|format(incident.longitude) }}
+                        </small>
+                        <a href="https://www.google.com/maps?q={{ incident.latitude }},{{ incident.longitude }}"
+                            target="_blank" class="btn btn-outline-primary btn-sm mb-3">
+                            <i class="fas fa-map-marker-alt me-1"></i>View on Google Maps
+                        </a>
+
+                        <!-- Leaflet Map -->
+                        <div id="leafletMap" style="height: 300px; width: 100%; border-radius: 8px;"></div>
+                        {% endif %}
+                    </div>
+
+                    {% if image_data %}
+                    <div class="mb-3">
+                        <strong>Attached Image:</strong>
+                        <div class="mt-2">
+                            <img src="{{ image_data }}" alt="Incident Image" class="img-fluid rounded"
+                                style="max-width: 100%; height: auto;">
+                        </div>
+                    </div>
+                    {% elif incident.image_id %}
+                    <div class="mb-3">
+                        <strong>Attached Image:</strong>
+                        <div class="mt-2">
+                            <img src="{{ url_for('image.serve_image', file_id=incident.image_id) }}" alt="Incident Image"
+                                class="img-fluid rounded" style="max-width: 100%; height: auto;">
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if incident.rescue_image_id %}
+                    <div class="mb-3">
+                        <strong>Rescue Team Image:</strong>
+                        <div class="mt-2">
+                            <img src="{{ url_for('image.serve_image', file_id=incident.rescue_image_id) }}" alt="Rescue Image"
+                                class="img-fluid rounded" style="max-width: 100%; height: auto;">
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <strong>Date Reported:</strong> {{ incident.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                        </div>
+                        <div class="col-md-6">
+                            {% if incident.resolved_at %}
+                            <strong>Date Resolved:</strong> {{ incident.resolved_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ETA Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-clock me-2"></i>Estimated Response Time</h5>
+                </div>
+                <div class="card-body">
+                    {% if incident.status in ['closed', 'rejected', 'resolved'] %}
+                    <div class="alert alert-secondary">
+                        <i class="fas fa-lock me-2"></i>
+                        Response time tracking has ended. Incident is {{ incident.status }}.
+                    </div>
+                    {% else %}
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center">
+                                <div class="me-3">
+                                    <i class="fas fa-truck-medical fa-2x text-danger"></i>
+                                </div>
+                                <div>
+                                    <h6 class="mb-0">Rescue Team ETA</h6>
+                                    <p class="mb-0" id="eta-display">Calculating...</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="progress" style="height: 10px;">
+                                <div id="eta-progress" class="progress-bar progress-bar-striped progress-bar-animated bg-danger"
+                                    role="progressbar" style="width: 0%"></div>
+                            </div>
+                            <small class="text-muted" id="eta-status">Dispatching team...</small>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-md-4">
+            <!-- Assignment Information -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-users me-2"></i>Assignment Information</h6>
+                </div>
+                <div class="card-body">
+                    {% if incident.assigned_team %}
+                    <div class="mb-2">
+                        <strong>Assigned Team:</strong><br>
+                        <span class="text-success">
+                            <i class="fas fa-user-shield me-1"></i>{{ incident.assigned_team.full_name }}
+                        </span>
+                    </div>
+                    {% if incident.assigned_team.phone %}
+                    <div class="mb-2">
+                        <strong>Contact:</strong><br>
+                        <small>{{ incident.assigned_team.phone }}</small>
+                    </div>
+                    {% endif %}
+                    <div class="alert alert-info" role="alert">
+                        <small>
+                            <i class="fas fa-info-circle me-1"></i>
+                            A rescue team has been assigned to your incident. They will contact you if additional
+                            information is needed.
+                        </small>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-3">
+                        <i class="fas fa-clock fa-2x text-muted mb-2"></i>
+                        <p class="text-muted mb-0">Waiting for team assignment</p>
+                        <small class="text-muted">Your incident is in our queue and will be assigned to a rescue team
+                            soon.</small>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Status Updates -->
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-history me-2"></i>Status Updates</h6>
+                </div>
+                <div class="card-body">
+                    {% if status_updates %}
+                    <div class="timeline">
+                        {% for update in status_updates %}
+                        <div class="timeline-item mb-3">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <span class="badge bg-info">
+                                        {{ update.old_status|title if update.old_status else 'Initial' }} → {{
+                                        update.new_status|title }}
+                                    </span>
+                                    {% if update.notes %}
+                                    <p class="small mb-1 mt-1">{{ update.notes }}</p>
+                                    {% endif %}
+                                    <small class="text-muted">
+                                        by {{ update.updater.full_name }}<br>
+                                        {{ update.created_at.strftime('%Y-%m-%d %H:%M') }}
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-center py-3">
+                        <i class="fas fa-clipboard-list fa-2x text-muted mb-2"></i>
+                        <p class="text-muted mb-0 small">No status updates yet</p>
+                        <small class="text-muted">You will receive updates as your incident progresses.</small>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status-based messages -->
+    {% if incident.status == 'pending' %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="alert alert-warning" role="alert">
+                <h6 class="alert-heading"><i class="fas fa-clock me-2"></i>Incident Pending</h6>
+                <p class="mb-0">Your incident has been received and is waiting to be assigned to a rescue team. You will
+                    be notified when there are updates.</p>
+            </div>
+        </div>
+    </div>
+    {% elif incident.status == 'in_progress' %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="alert alert-info" role="alert">
+                <h6 class="alert-heading"><i class="fas fa-spinner me-2"></i>Incident In Progress</h6>
+                <p class="mb-0">A rescue team is actively working on your incident. Please keep your phone available in
+                    case they need to contact you.</p>
+            </div>
+        </div>
+    </div>
+    {% elif incident.status == 'resolved' %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="alert alert-success" role="alert">
+                <h6 class="alert-heading"><i class="fas fa-check-circle me-2"></i>Incident Resolved</h6>
+                <p class="mb-0">Your incident has been resolved by the rescue team. Thank you for using our crisis
+                    management system.</p>
+            </div>
+        </div>
+    </div>
+    {% elif incident.status == 'closed' %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="alert alert-secondary" role="alert">
+                <h6 class="alert-heading"><i class="fas fa-times-circle me-2"></i>Incident Closed</h6>
+                <p class="mb-0">This incident has been closed. If you need further assistance, please submit a new
+                    incident report.</p>
+            </div>
+        </div>
+    </div>
+    {% elif incident.status == 'rejected' %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="alert alert-danger" role="alert">
+                <h6 class="alert-heading"><i class="fas fa-ban me-2"></i>Incident Rejected</h6>
+                <p class="mb-0">This incident has been rejected. This may be due to insufficient information or it has
+                    been identified as a false report.</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
