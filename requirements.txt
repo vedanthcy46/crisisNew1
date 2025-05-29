@@ -6,3 +6,4 @@ gunicorn
 flask_login
 psycopg2
 flask_wtf
+pymysql
